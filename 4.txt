@@ -1,0 +1,46 @@
+Picture Vault File System
+Building a Secure File System
+Storing and sharing multimedia files in a safe and secure fashion is a concern for many home users. Parents want to protect their kids from viewing some content. There are also scenarios where kids only want to share files with their friend but not with their parents.  However, everyone wants to be able to insure that their pictures are backed up, safe, and kept with a degree of privacy that’s under your control.  In general, the idea is to share a subset of our photo collection with the world, some with different collections of friends, and keep some photos private.  (i.e. “The soccer club can see these, the Friday Night Crew can see those, and no one else ever gets to see that one.”)
+
+To be specific, the use case therefore requires partitioning the photos among multiple groups of users. This not only involves giving access rights to people we want to share our photos with but also to protect them from the rest of the world. One solution is to encrypt the picture files and give access to relevant users or groups. The users or groups who don’t have access to the pictures will fail to decrypt the files and hence won’t able to view them.  Two key questions come up -- how do I manage sharing those keys, and where should the encryption be done? 
+
+To begin in reverse order, there are many user level encryption libraries that take photos as raw data, encrypts them and then deletes the original files. There are a couple potential issues to be addressed in this approach. First, it gives the intruder the room to get the data when it is present in raw format in the disk before it has been encrypted. Second, when you are using a remote file system like NFS, the unencrypted data goes through an insecure channel before it’s written to the disk, giving the attacker the opportunity to snoop the data in the middle.  Thus, your design will need to use a combination of kernel-level and userspace-level encryption functions to achieve the desired goals
+
+As for key management and distribution, that will depend greatly upon how you choose to develop your scenario and your encryption standard.  Can you use GPG?  Shared symmetric keys?  Certificates?  This is a degree of design freedom you will need to address in your final project.
+
+In summary, for this assignment you are going to design and implement a file system that will give the owners of picture files the capability to choose to give access rights of the files to certain groups or users, while maintaining complete privacy of the files outside of those explicit allowances. The file system will also encrypt the data in the file before writing to the disk to keep it protected from attackers.
+
+
+
+MPV Features
+This project is about building a secure photo storage file system called My Picture Vault (MPV) in which multiple users are given access to photos created or owned by some owner. The data also needs to be encrypted on the fly inside the kernel before it’s been written to the disk or flushed. Note that you may chose to implement new syscalls to make the userspace programming easier.  You might also use a combination of existing functions and GPU accelearted ones.  The design challenge is to maintain the access control list and its hightened privacy behavior -- kernel level encryption of data and ignoring any access to the Photo store that involves users that doesn’t have access rights.  This should also include careful management of how stat() calls on functions are returned -- sometimes just knowing that a file exists is too much knowledge...
+ 
+Minimum requirement of the project:
+1. Designing the access control behavior for a set of picture files which the owner has given access rights to multiple users and to protect it from intruders.
+2. Automatic on the fly encryption of pictures inside the kernel before being written to the disk or flushed.
+3. Backend storage: Implementation doesn’t involve the complete design of a file system i.e. the picture files should be stored in some backend store. So you are open to use hidden folder, a cloud location etc to back your files.
+ 
+Further ideas:
+  Feel free to develop this scenario and go as far as your team wants!  There are interesting extensions if you need to think about including mobile devices in this environment -- do you want to protect your phone in a different way than you do your home media server?  Localization is also interesting -- what if pictures are “home” public but “work” private?  Want to do face recognition on photos and automatically grant access to “Fred” whenever you see him in a picture?  Want to put public data on flickr and just rehost a reference to it?  We look forward to seeing where you end up!
+
+
+Tools
+FUSE
+You will be using the FUSE toolkit to implement your file system for this project.  Accessing complex libraries from the kernel is problematic, and FUSE helps to solve this.  FUSE, in essence, brings a bit of microkernel to the Linux macrokernel.  It implements the Linux virtual file system interface in the kernel by providing callback functions to a registered userspace program.  The userspace daemon can then perform the action as requested and supply the updates to the inodes, directory structures, etc. through a set of provided functions.
+
+You can go and download FUSE and build and install it for your linux kernel if you like.  However, a package for the redhat kernel already exists.  “yum install fuse fuse-devel fuse-libs”, run as root on your hack factor, should be sufficient, if they aren’t already installed.  There are a number of tutorials and "hello world" examples to read online about how to get started with fuse.  Useful pages to start with are
+http://fuse.sourceforge.net/  -- The main page for all things fuse.
+http://fuse.sourceforge.net/helloworld.html  -- a simple hello world
+
+Encryption
+ 
+There are some Linux kernel cryptographic APIs available has been pointed below, which you can use but you are free to use other encryption techniques if you want.
+http://www.linuxjournal.com/article/6451?page=0,0
+ 
+Report
+ 
+You will need to turn in the source code of your implementation of MPV along with a report on detailed design of the file systems, the assumptions made during the design process, measurement of its performance and how the design scales with the number of images.  The report should also include picture file intrusion techniques and how your file system successfully dealt with them.  As before, please put all of your source files into a single tarball (.tgz file) with the report as a separate PDF or DOC file.  Graphs of scalability and performance should be included. 
+ 
+Presentation
+ 
+Presentations will be done in class, during the final week of classes (ie Dead Week).  You will have ~8 minutes to do a presentation (with slides) describing your design choices, your user scenario, and to demonstrate your code running on the system.  Remember to think of this as if you are pitching your code base to a bunch of venture capital folks -- fun, informative, and technically brilliant are what we’re looking for.  (no pressure, of course)
