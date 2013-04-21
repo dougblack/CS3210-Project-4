@@ -2,7 +2,7 @@
 
 int num_files = 0;
 char *secret_directory = "/nethome/dblack7/proj4/.secret";
-char *password;
+unsigned char *password;
 
 static struct fuse_operations dir_oper = {
   .getattr = dir_getattr,
@@ -13,6 +13,7 @@ static struct fuse_operations dir_oper = {
   .read = file_read,
   .write = file_write,
   .mknod = file_mknod,
+  .release = file_release,
 };
 
 static int dir_rmfile(const char *path)
@@ -107,26 +108,46 @@ static int dir_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   return 0;
 }
 
+static int file_release(const char *path, struct fuse_file_info *fi)
+{
+  int fd;
+  char entry_name[50];
+  sprintf(entry_name, "%s%s", secret_directory, path);
+  printf("Trying to release file: %s\n", entry_name);
+
+  if (strstr(entry_name, "private") != NULL) {
+    printf("Releasing private file.\n");
+    encrypt(entry_name, password);
+  } else {
+    printf("Release public file.\n");
+  }
+  return 0;
+}
+
 static int file_open(const char *path, struct fuse_file_info *fi)
 {
 
-  int res;
+  int fd;
   char entry_name[50];
   sprintf(entry_name, "%s%s", secret_directory, path);
   printf("Trying to open file: %s\n", entry_name);
 
-  if (strstr(entry_name, "private") != NULL) {
-    printf("Private file\n");
-  } else {
-    printf("Public file.\n");
-  }
-  res = open(entry_name, fi->flags);
-  if (res == -1) {
+  fd = open(entry_name, fi->flags);
+
+  if (fd == -1) {
     printf("Failed to open file: %s.\n", strerror(errno));
     return -errno;
   }
 
-  close(res);
+  if (strstr(entry_name, "private") != NULL) {
+    printf("Private file\n");
+    decrypt(entry_name, password);
+    printf("Done decrypting.\n");
+  } else {
+    printf("Public file.\n");
+  }
+
+  close(fd);
   return 0;
 }
 
@@ -188,48 +209,73 @@ static int file_mknod(const char *path, mode_t mode, dev_t dev) {
   return res;
 }
 
-void encrypt(const char *fileIn, const char *fileOut, const unsigned char *key) {
+void encrypt(const char *path, const unsigned char *key) {
+
   int i;
   aes_encrypt_ctx ctx[1];
   unsigned char iv[16];
+  unsigned char entry_name[50];
   unsigned char inBuffer[200], outBuffer[200];
-  FILE *inFile = fopen(fileIn, "rb");
-  FILE *outFile = fopen(fileOut, "wb");
+  FILE *dfile;
+  FILE *ofile;
+  sprintf(entry_name, "%s.encrypted", path);
+  dfile = fopen(path, "rb");
+  ofile = fopen(entry_name, "wb");
+  if (dfile != NULL) {
+    printf("File.\n");
+    fflush(stdout);
+  } else {
+    return;
+  }
 
+  printf("Encrypting some shit!.\n");
 
   for (i = 0; i < 16; ++i)
     iv[i] = rand() & 0xFF;
-  fwrite(iv, 1, 16, outFile);
+  fwrite(iv, 1, 16, ofile);
 
   aes_encrypt_key256(key, ctx);
-  while ((i = fread(inBuffer, 1, sizeof(inBuffer), inFile)) > 0) {
+  while ((i = fread(inBuffer, 1, sizeof(inBuffer), dfile)) > 0) {
     aes_ofb_crypt(inBuffer, outBuffer, i, iv, ctx);
-    fwrite(outBuffer, 1, i, outFile);
+    fwrite(outBuffer, 1, i, ofile);
   }
 
-  fclose(inFile);
-  fclose(outFile);
+  fclose(dfile);
+  fclose(ofile);
 }
 
-void decrypt(int fd, const char *fileOut, const unsigned char *key) {
+void decrypt(const char *path, const unsigned char *key) {
   int i;
   aes_encrypt_ctx ctx[1];
   unsigned char iv[16];
+  unsigned char entry_name[50];
   unsigned char inBuffer[200], outBuffer[200];
-  FILE *dfile = fdopen(fd, "r+b");
+  sprintf(entry_name, "%s.encrypted", path);
+  FILE *dfile = fopen(entry_name, "rb");
+  FILE *ofile = fopen(path, "wb");
+  if (dfile != NULL) {
+    printf("File.\n");
+    fflush(stdout);
+  } else {
+    return;
+  }
+
+  printf("Decrypting some shit!.\n");
 
   if (fread(iv, 1, 16, dfile) < 16) {
     printf("Decryption error.\n");
-    fclose(d_file);
+    fclose(dfile);
+    fclose(ofile);
     return;
   }
 
   aes_encrypt_key256(key, ctx);
   while ((i = fread(inBuffer, 1, sizeof(inBuffer), dfile)) > 0) {
     aes_ofb_crypt(inBuffer, outBuffer, i, iv, ctx);
-    fwrite(outBuffer, 1, i, dfile);
+    fwrite(outBuffer, 1, i, ofile);
   }
   fclose(dfile);
+  fclose(ofile);
 }
 
 int main(int argc, char *argv[])
