@@ -1,8 +1,9 @@
 #include "dir.h"
 
 int num_files = 0;
-char *secret_directory = "/nethome/dblack7/proj4/.secret";
+char *secret_directory = "/home/encrypted/.secret";
 unsigned char *password;
+char *username;
 
 static struct fuse_operations dir_oper = {
   .getattr = dir_getattr,
@@ -69,10 +70,18 @@ static int dir_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
   DIR *d;
   struct dirent *dir;
   char entry_name[50];
-  char *username = getlogin();
+  char private_name[50];
+  char *current_directory;
   int found = 0;
+
   printf("Username is %s.\n", username);
   printf("Path is %s\n", path);
+  current_directory = (char *) basename(path);
+
+  if (strcmp(current_directory, "private") == 0 && strstr(path, username) == NULL) {
+    printf("User doesn't have access. Hiding all files.\n");
+    return 0;
+  }
   sprintf(entry_name, "%s%s", secret_directory, path);
   d = opendir(entry_name);
   if (d)
@@ -94,10 +103,12 @@ static int dir_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     filler(buf, strerror(errno), NULL, 0);
   }
 
+  /* Only called on a user's first use. */
   if (!found && strcmp(path, "/") == 0) {
     sprintf(entry_name, "%s/%s", secret_directory, username);
     printf("Making directory %s", entry_name);
-    if (mkdir(entry_name, S_IFDIR | 0755) == 0) {
+    sprintf(private_name, "%s/private", entry_name);
+    if (mkdir(entry_name, S_IFDIR | 0755) == 0 && mkdir(private_name, S_IFDIR | 0755) == 0) {
       printf("Welcome, %s\nThis is your first time logging in, so we're going to create your home directory now.\n", username);
       return 0;
     } else {
@@ -126,7 +137,6 @@ static int file_release(const char *path, struct fuse_file_info *fi)
 
 static int file_open(const char *path, struct fuse_file_info *fi)
 {
-
   int fd;
   char entry_name[50];
   sprintf(entry_name, "%s%s", secret_directory, path);
@@ -140,6 +150,11 @@ static int file_open(const char *path, struct fuse_file_info *fi)
   }
 
   if (strstr(entry_name, "private") != NULL) {
+    if (strstr(entry_name, username) == NULL) {
+      printf("User doesn't have access.");
+      close(fd);
+      return 0;
+    }
     printf("Private file\n");
     decrypt(entry_name, password);
     printf("Done decrypting.\n");
@@ -214,13 +229,13 @@ void encrypt(const char *path, const unsigned char *key) {
   int i;
   aes_encrypt_ctx ctx[1];
   unsigned char iv[16];
-  unsigned char entry_name[50];
+  unsigned char temp_name[50];
   unsigned char inBuffer[200], outBuffer[200];
   FILE *dfile;
   FILE *ofile;
-  sprintf(entry_name, "%s.encrypted", path);
+  sprintf(temp_name, "%s.tmp", path);
   dfile = fopen(path, "rb");
-  ofile = fopen(entry_name, "wb");
+  ofile = fopen(temp_name, "wb");
   if (dfile != NULL) {
     printf("File.\n");
     fflush(stdout);
@@ -228,7 +243,6 @@ void encrypt(const char *path, const unsigned char *key) {
     return;
   }
 
-  printf("Encrypting some shit!.\n");
 
   for (i = 0; i < 16; ++i)
     iv[i] = rand() & 0xFF;
@@ -242,17 +256,21 @@ void encrypt(const char *path, const unsigned char *key) {
 
   fclose(dfile);
   fclose(ofile);
+  if (remove(path) != 0)
+    printf("Error removing infile.\n");
+  if (rename(temp_name, path) != 0)
+    printf("Error renaming file.\n");
 }
 
 void decrypt(const char *path, const unsigned char *key) {
   int i;
   aes_encrypt_ctx ctx[1];
   unsigned char iv[16];
-  unsigned char entry_name[50];
+  unsigned char temp_name[50];
   unsigned char inBuffer[200], outBuffer[200];
-  sprintf(entry_name, "%s.encrypted", path);
-  FILE *dfile = fopen(entry_name, "rb");
-  FILE *ofile = fopen(path, "wb");
+  sprintf(temp_name, "%s.tmp", path);
+  FILE *dfile = fopen(path, "rb");
+  FILE *ofile = fopen(temp_name, "wb");
   if (dfile != NULL) {
     printf("File.\n");
     fflush(stdout);
@@ -260,7 +278,6 @@ void decrypt(const char *path, const unsigned char *key) {
     return;
   }
 
-  printf("Decrypting some shit!.\n");
 
   if (fread(iv, 1, 16, dfile) < 16) {
     printf("Decryption error.\n");
@@ -274,12 +291,28 @@ void decrypt(const char *path, const unsigned char *key) {
     aes_ofb_crypt(inBuffer, outBuffer, i, iv, ctx);
     fwrite(outBuffer, 1, i, ofile);
   }
+
   fclose(dfile);
   fclose(ofile);
+
+  if (remove(path) != 0)
+    printf("Error removing encrypted file.\n");
+  if (rename(temp_name, path) != 0)
+    printf("Error renaming file.\n");
+
 }
 
 int main(int argc, char *argv[])
 {
+  char cwd[1024];
+  if (getcwd(cwd, sizeof(cwd)) == NULL) {
+    printf("Couldn't get current working directory. Exiting.\n");
+    return 0;
+  } else {
+    printf("%s", cwd);
+    username = (char *) basename(cwd);
+    printf("%s", username);
+  }
   password = getpass("Enter your password: ");
   aes_init();
   return fuse_main(argc, argv, &dir_oper);

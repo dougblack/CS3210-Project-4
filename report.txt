@@ -1,0 +1,84 @@
+Report
+Doug Black
+
+=====TROUBLESHOOTING
+
+If any function named "aes" is failing, move to the aes/ directory, and run:
+
+gcc -c -O2 -fomit-frame-pointer aescrypt.c aeskey.c aestab.c aes_modes.c
+ar rcs libaes.a *.o
+
+Then move the libaes.a file into the same directory as dir.c and dir.h.
+"make" should now succeed.
+
+FEATURES
+
+1. Each user has their own folder, named after their username, that contains a
+private directory. These two folders are created when the user first logs in.
+1. Users can hide files in a private directory. These files are both encrypted and hidden from other users.
+2. Files not residing in the private directory are public, and shared with all users of the filesystem.
+3. Users are asked for a passkey when mounting the filesystem. This key is used to encrypt and decrypt files in the private directory.
+
+To use the filesystem, a user must mount it *from their own home directory*. The assumption here is that only the owner of the home directory will be able to mount the filesystem. This is how the username of the current user is determined.
+
+The backend store for my filesystem is a hidden folder located at /home/encrypted/.secret/. Because private files are always encrypted before they're written back to this datastore, security is decent.
+
+SECURITY STRENGTHS
+
+1. A private file can only be read by the user who owns it and has the correct passkey.
+2. Even if a user gains the passkey of another user, he will be unable to view that user's files without having access to their home directory.
+
+KNOWN SECURITY WEAKNESSES
+
+1. Because the hidden folder is only hidden, the existence of private files could be determined by a user who finds the hidden folder. The files will still be encrypted, but their names will not be.
+2. Private files are hidden, but an attacking user who knew a file existed could still attempt to read it. He would get back an encrypted file, but his attempts to access it could end up reencrypting it according to his incalid passkey, resulting in a lost file.
+
+EXAMPLE FILE STRUCTURE
+
+/dblack7
+  |--mountpoint/
+    |--dblack7/
+      |--public1.png
+      |--public2.png
+      |--public3.png
+      |--private/
+          |-private1.png (*)
+          |-private2.png (*)
+    |--sally3/
+      |--public1.png
+      |--private/
+          |-private1.png (*)
+
+In this example, the mouting user is dblack7. He will have access to every
+file in the /mountpoint/dblack7/ directory. He will not have access to files in /mountpoint/sally3/private/, as these files are both hidden and encrypted to him. Files denoted with a (*) are stored in an encrypted state. 
+
+PERFORMANCE
+
+There should be no scaling issues with this solution. This only operation that
+grows with increased file quantity is the readdir option, which grows
+perfectly linearly with the number of entries in a directory, since it's
+iterating over each entry in the directory. Since this can be proven
+theoretically, performance metrics were not taken. In essence, I'm arguing
+that my filesystem introduces almost no overhead over the basic linux
+filesystem, since it uses the standard linux filesystem as a backend store,
+the encryption/decryption are both O(L) where L is the length of the file, and
+all other operations have a constant overhead over their standard linux
+counterparts.
+
+ENCRYPTION
+
+To encrypt a file, it is run through an AES256 encryption library courtesy of Dr. Brian Gladman. This encryption is done in 200 char chunks. In addition, the initialization key (this is NOT the same as the user-provided passkey) for the encrypted files is stored in the first 16 characters of the file. This key is randomly generated and used in combination with the user-provided passkey to decrypt/encrypt the file.
+
+INSTRUCTION TECHNIQUES THAT FAIL
+
+1. An attacking user attempts to read files from the private directory of
+another user. He can't see any of the files, so he fails.
+2. An attacking user attempts to read a file from the private directory of
+another user that he knows exists. He doesn't know the passkey for the file's
+owner, so the file is returned in an unreadable state, so he fails.
+3. An attacking user attempts to go directly to the backing store to read the
+files of another user. The files in private directories are always stored in
+an encrypted state, so he fails.
+4. An attacking user tries to decrypt one of the encrypted files of another
+user, since he doesn't know their passkey (and it's not stored anywhere on the
+system!) he fails. Note: passkeys are never stored.

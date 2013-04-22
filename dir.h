@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <libgen.h>
 #include <dirent.h>
 #include <unistd.h>
 #include "aes/aes.h"
